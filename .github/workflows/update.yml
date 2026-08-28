@@ -18,31 +18,48 @@ jobs:
 
       - name: Check for updates
         id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          CURL_OPTS=(-sL)
-          [ -n "${GITHUB_TOKEN:-}" ] && CURL_OPTS+=(-H "Authorization: token $GITHUB_TOKEN")
+          CURL_OPTS=(-sL -H "Authorization: token $GITHUB_TOKEN")
           LATEST_TAG=$(curl "${CURL_OPTS[@]}" "https://api.github.com/repos/crmne/fastpotify/releases/latest" | jq -r '.tag_name')
           LATEST_VERSION="${LATEST_TAG#v}"
           CURRENT=$(grep 'version = ' package.nix | head -1 | sed 's/.*"\(.*\)".*/\1/')
 
-          echo "current=$CURRENT" >> $GITHUB_OUTPUT
-          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
 
           if [ "$LATEST_VERSION" != "$CURRENT" ] && [ -n "$LATEST_VERSION" ] && [ "$LATEST_VERSION" != "null" ]; then
-            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
           else
-            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update package
+      - name: Update version and source hash
         if: steps.check.outputs.needs_update == 'true'
         run: |
-          nix run nixpkgs#nix-prefetch-github -- crmne fastpotify --rev "${{ steps.check.outputs.latest_tag }}" > /tmp/prefetch.json
-          SRI_HASH=$(jq -r '.hash' /tmp/prefetch.json)
+          SRC_HASH=$(nix run nixpkgs#nix-prefetch-github -- crmne fastpotify --rev "${{ steps.check.outputs.latest_tag }}" | jq -r '.hash')
 
-          sed -i "s/version = \".*\"/version = \"${{ steps.check.outputs.latest }}\"/" package.nix
-          sed -i "s|hash = \"sha256-.*\"|hash = \"$SRI_HASH\"|" package.nix
+          sed -i "0,/version = \".*\"/{s/version = \".*\"/version = \"${{ steps.check.outputs.latest }}\"/}" package.nix
+          sed -i "0,/hash = \"sha256-.*\"/{s/hash = \"sha256-.*\"/hash = \"$SRC_HASH\"/}" package.nix
+
+      - name: Recompute cargoHash
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          FAKE_HASH="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          sed -i "0,/cargoHash = \".*\"/{s/cargoHash = \".*\"/cargoHash = \"$FAKE_HASH\"/}" package.nix
+
+          BUILD_OUTPUT=$(nix build .#fastpotify -L 2>&1) || true
+          CARGO_HASH=$(echo "$BUILD_OUTPUT" | grep -A1 "vendor-staging.drv" | grep "got:" | head -1 | sed 's/.*got:[[:space:]]*//')
+
+          if [ -z "$CARGO_HASH" ]; then
+            echo "Could not compute cargoHash:"
+            echo "$BUILD_OUTPUT"
+            exit 1
+          fi
+
+          sed -i "0,/cargoHash = \".*\"/{s/cargoHash = \".*\"/cargoHash = \"$CARGO_HASH\"/}" package.nix
 
       - name: Test build
         if: steps.check.outputs.needs_update == 'true'
