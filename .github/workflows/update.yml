@@ -36,7 +36,7 @@ jobs:
             echo "needs_update=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update version and source hash
+      - name: Update version, source hash and Cargo.lock
         if: steps.check.outputs.needs_update == 'true'
         run: |
           SRC_HASH=$(nix run nixpkgs#nix-prefetch-github -- crmne fastpotify --rev "${{ steps.check.outputs.latest_tag }}" | jq -r '.hash')
@@ -44,22 +44,9 @@ jobs:
           sed -i "0,/version = \".*\"/{s/version = \".*\"/version = \"${{ steps.check.outputs.latest }}\"/}" package.nix
           sed -i "0,/hash = \"sha256-.*\"/{s/hash = \"sha256-.*\"/hash = \"$SRC_HASH\"/}" package.nix
 
-      - name: Recompute cargoHash
-        if: steps.check.outputs.needs_update == 'true'
-        run: |
-          FAKE_HASH="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-          sed -i "0,/cargoHash = \".*\"/{s/cargoHash = \".*\"/cargoHash = \"$FAKE_HASH\"/}" package.nix
-
-          BUILD_OUTPUT=$(nix build .#fastpotify -L 2>&1) || true
-          CARGO_HASH=$(echo "$BUILD_OUTPUT" | grep -A1 "vendor-staging.drv" | grep "got:" | head -1 | sed 's/.*got:[[:space:]]*//')
-
-          if [ -z "$CARGO_HASH" ]; then
-            echo "Could not compute cargoHash:"
-            echo "$BUILD_OUTPUT"
-            exit 1
-          fi
-
-          sed -i "0,/cargoHash = \".*\"/{s/cargoHash = \".*\"/cargoHash = \"$CARGO_HASH\"/}" package.nix
+          curl -sL -o Cargo.lock \
+            "https://raw.githubusercontent.com/crmne/fastpotify/${{ steps.check.outputs.latest_tag }}/Cargo.lock"
+          grep -q '^\[\[package\]\]' Cargo.lock
 
       - name: Test build
         if: steps.check.outputs.needs_update == 'true'
@@ -71,7 +58,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.nix
+          git add package.nix Cargo.lock
           git commit -m "Update fastpotify to ${{ steps.check.outputs.latest }}"
           git push
 
