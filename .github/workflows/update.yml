@@ -1,0 +1,68 @@
+name: Auto Update
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+
+      - name: Check for updates
+        id: check
+        run: |
+          CURL_OPTS=(-sL)
+          [ -n "${GITHUB_TOKEN:-}" ] && CURL_OPTS+=(-H "Authorization: token $GITHUB_TOKEN")
+          LATEST_TAG=$(curl "${CURL_OPTS[@]}" "https://api.github.com/repos/crmne/fastpotify/releases/latest" | jq -r '.tag_name')
+          LATEST_VERSION="${LATEST_TAG#v}"
+          CURRENT=$(grep 'version = ' package.nix | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          if [ "$LATEST_VERSION" != "$CURRENT" ] && [ -n "$LATEST_VERSION" ] && [ "$LATEST_VERSION" != "null" ]; then
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update package
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          nix run nixpkgs#nix-prefetch-github -- crmne fastpotify --rev "${{ steps.check.outputs.latest_tag }}" > /tmp/prefetch.json
+          SRI_HASH=$(jq -r '.hash' /tmp/prefetch.json)
+
+          sed -i "s/version = \".*\"/version = \"${{ steps.check.outputs.latest }}\"/" package.nix
+          sed -i "s|hash = \"sha256-.*\"|hash = \"$SRI_HASH\"|" package.nix
+
+      - name: Test build
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          nix build .#fastpotify --accept-flake-config
+
+      - name: Commit and push
+        if: steps.check.outputs.needs_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.nix
+          git commit -m "Update fastpotify to ${{ steps.check.outputs.latest }}"
+          git push
+
+      - name: Create Release
+        if: steps.check.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.check.outputs.latest }}" \
+            --title "fastpotify ${{ steps.check.outputs.latest }}" \
+            --notes "Updated fastpotify to ${{ steps.check.outputs.latest }} (upstream: https://github.com/crmne/fastpotify/releases/tag/${{ steps.check.outputs.latest_tag }})"
