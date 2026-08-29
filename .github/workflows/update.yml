@@ -39,13 +39,50 @@ jobs:
       - name: Update version, source hash and Cargo.lock
         if: steps.check.outputs.needs_update == 'true'
         run: |
-          SRC_HASH=$(nix run nixpkgs#nix-prefetch-github -- crmne fastpotify --rev "${{ steps.check.outputs.latest_tag }}" | jq -r '.hash')
+          # `set -e` alone does not cover this step: the old version read the
+          # hash through a pipe into `jq`, and a failing prefetch was masked by
+          # jq's own success. `nix-prefetch-github` answers with `lib.fakeHash`
+          # when it cannot compute a hash, so on 2026-08-29 the placeholder
+          # `sha256-AAAA…` travelled into package.nix and the run died one step
+          # later on a hash mismatch that already carried the right answer.
+          set -euo pipefail
 
-          sed -i "0,/version = \".*\"/{s/version = \".*\"/version = \"${{ steps.check.outputs.latest }}\"/}" package.nix
-          sed -i "0,/hash = \"sha256-.*\"/{s/hash = \"sha256-.*\"/hash = \"$SRC_HASH\"/}" package.nix
+          TAG="${{ steps.check.outputs.latest_tag }}"
+          VERSION="${{ steps.check.outputs.latest }}"
 
-          curl -sL -o Cargo.lock \
-            "https://raw.githubusercontent.com/crmne/fastpotify/${{ steps.check.outputs.latest_tag }}/Cargo.lock"
+          # `nix-prefetch-url` exits non-zero when the fetch fails instead of
+          # inventing a hash, and it needs no extra package. `--unpack` is what
+          # makes the result comparable to `fetchFromGitHub`, which hashes the
+          # extracted tree rather than the tarball.
+          RAW_HASH=$(nix-prefetch-url --unpack --type sha256 \
+            "https://github.com/crmne/fastpotify/archive/refs/tags/${TAG}.tar.gz")
+          SRC_HASH=$(nix hash convert --hash-algo sha256 --to sri "$RAW_HASH")
+
+          # Belt to the braces above: whatever produced this value, a
+          # placeholder must never reach the file.
+          case "$SRC_HASH" in
+            sha256-AAAAAAAA*)
+              echo "refusing to write the fake hash into package.nix" >&2
+              exit 1
+              ;;
+            sha256-?*) ;;
+            *)
+              echo "unusable source hash: '$SRC_HASH'" >&2
+              exit 1
+              ;;
+          esac
+
+          sed -i "0,/version = \".*\"/{s/version = \".*\"/version = \"${VERSION}\"/}" package.nix
+          sed -i "0,/hash = \"sha256-.*\"/{s|hash = \"sha256-.*\"|hash = \"${SRC_HASH}\"|}" package.nix
+
+          # The substitutions have to have landed: a silently unmatched `sed`
+          # leaves the previous release in place and the test build would then
+          # prove the wrong thing.
+          grep -Fq "version = \"${VERSION}\"" package.nix
+          grep -Fq "hash = \"${SRC_HASH}\"" package.nix
+
+          curl -fsSL -o Cargo.lock \
+            "https://raw.githubusercontent.com/crmne/fastpotify/${TAG}/Cargo.lock"
           grep -q '^\[\[package\]\]' Cargo.lock
 
       - name: Test build
