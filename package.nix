@@ -19,13 +19,13 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
-  version = "0.1.3";
+  version = "0.2.0";
 
   src = fetchFromGitHub {
     owner = "crmne";
     repo = "fastpotify";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-gjQX3pkVzApZNY0ZJj8zuhe3Od5qfqPInRl2ScwyFSY=";
+    hash = "sha256-JMeb6J3JBFSDpZ6GdcXL1y+mBHsNrIyXX5ztHU56PCQ=";
   };
 
   cargoLock.lockFile = ./Cargo.lock;
