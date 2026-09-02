@@ -13,6 +13,7 @@
       packages.${system} = {
         default = pkgs.callPackage ./package.nix {};
         fastpotify = self.packages.${system}.default;
+        nix-prefetch-git = pkgs.nix-prefetch-git;
       };
 
       overlays.default = final: prev: {

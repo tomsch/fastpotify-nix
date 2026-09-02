@@ -16,74 +16,38 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v27
 
+      - name: Test updater
+        run: python3 tests/test_updater.py
+
       - name: Check for updates
         id: check
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          CURL_OPTS=(-sL -H "Authorization: token $GITHUB_TOKEN")
-          LATEST_TAG=$(curl "${CURL_OPTS[@]}" "https://api.github.com/repos/crmne/fastpotify/releases/latest" | jq -r '.tag_name')
+          set -euo pipefail
+          LATEST_TAG=$(curl -fsSL \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/crmne/fastpotify/releases/latest" |
+            jq -er '.tag_name')
           LATEST_VERSION="${LATEST_TAG#v}"
           CURRENT=$(grep 'version = ' package.nix | head -1 | sed 's/.*"\(.*\)".*/\1/')
 
-          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "latest=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
-          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "current=$CURRENT"
+            echo "latest=$LATEST_VERSION"
+            echo "latest_tag=$LATEST_TAG"
+            if [ "$LATEST_VERSION" != "$CURRENT" ]; then
+              echo "needs_update=true"
+            else
+              echo "needs_update=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
 
-          if [ "$LATEST_VERSION" != "$CURRENT" ] && [ -n "$LATEST_VERSION" ] && [ "$LATEST_VERSION" != "null" ]; then
-            echo "needs_update=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "needs_update=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Update version, source hash and Cargo.lock
+      - name: Update package and dependency pins
         if: steps.check.outputs.needs_update == 'true'
-        run: |
-          # `set -e` alone does not cover this step: the old version read the
-          # hash through a pipe into `jq`, and a failing prefetch was masked by
-          # jq's own success. `nix-prefetch-github` answers with `lib.fakeHash`
-          # when it cannot compute a hash, so on 2026-08-29 the placeholder
-          # `sha256-AAAA…` travelled into package.nix and the run died one step
-          # later on a hash mismatch that already carried the right answer.
-          set -euo pipefail
-
-          TAG="${{ steps.check.outputs.latest_tag }}"
-          VERSION="${{ steps.check.outputs.latest }}"
-
-          # `nix-prefetch-url` exits non-zero when the fetch fails instead of
-          # inventing a hash, and it needs no extra package. `--unpack` is what
-          # makes the result comparable to `fetchFromGitHub`, which hashes the
-          # extracted tree rather than the tarball.
-          RAW_HASH=$(nix-prefetch-url --unpack --type sha256 \
-            "https://github.com/crmne/fastpotify/archive/refs/tags/${TAG}.tar.gz")
-          SRC_HASH=$(nix hash convert --hash-algo sha256 --to sri "$RAW_HASH")
-
-          # Belt to the braces above: whatever produced this value, a
-          # placeholder must never reach the file.
-          case "$SRC_HASH" in
-            sha256-AAAAAAAA*)
-              echo "refusing to write the fake hash into package.nix" >&2
-              exit 1
-              ;;
-            sha256-?*) ;;
-            *)
-              echo "unusable source hash: '$SRC_HASH'" >&2
-              exit 1
-              ;;
-          esac
-
-          sed -i "0,/version = \".*\"/{s/version = \".*\"/version = \"${VERSION}\"/}" package.nix
-          sed -i "0,/hash = \"sha256-.*\"/{s|hash = \"sha256-.*\"|hash = \"${SRC_HASH}\"|}" package.nix
-
-          # The substitutions have to have landed: a silently unmatched `sed`
-          # leaves the previous release in place and the test build would then
-          # prove the wrong thing.
-          grep -Fq "version = \"${VERSION}\"" package.nix
-          grep -Fq "hash = \"${SRC_HASH}\"" package.nix
-
-          curl -fsSL -o Cargo.lock \
-            "https://raw.githubusercontent.com/crmne/fastpotify/${TAG}/Cargo.lock"
-          grep -q '^\[\[package\]\]' Cargo.lock
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./update.sh --no-build
 
       - name: Test build
         if: steps.check.outputs.needs_update == 'true'
@@ -99,11 +63,10 @@ jobs:
           git commit -m "Update fastpotify to ${{ steps.check.outputs.latest }}"
           git push
 
-      - name: Create Release
-        if: steps.check.outputs.needs_update == 'true'
+      - name: Ensure Release exists
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${{ steps.check.outputs.latest }}" \
-            --title "fastpotify ${{ steps.check.outputs.latest }}" \
-            --notes "Updated fastpotify to ${{ steps.check.outputs.latest }} (upstream: https://github.com/crmne/fastpotify/releases/tag/${{ steps.check.outputs.latest_tag }})"
+          ./scripts/ensure-release.sh \
+            "${{ steps.check.outputs.latest }}" \
+            "${{ steps.check.outputs.latest_tag }}"

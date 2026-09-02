@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# Update script for the fastpotify package.
-# Usage: ./update.sh
+# Update Fastpotify and every Cargo git dependency to the latest release.
+# Usage: ./update.sh [--no-build]
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_NIX="$SCRIPT_DIR/package.nix"
 CARGO_LOCK="$SCRIPT_DIR/Cargo.lock"
+BUILD=true
+
+case "${1:-}" in
+    "") ;;
+    --no-build) BUILD=false ;;
+    *)
+        echo "Usage: $0 [--no-build]" >&2
+        exit 2
+        ;;
+esac
 
 CURRENT_VERSION=$(grep 'version = ' "$PACKAGE_NIX" | head -1 | sed 's/.*"\(.*\)".*/\1/')
 echo "Current version: $CURRENT_VERSION"
 
 echo "Checking GitHub for latest release..."
-CURL_OPTS=(-sL)
+CURL_OPTS=(-fsSL)
 [ -n "${GITHUB_TOKEN:-}" ] && CURL_OPTS+=(-H "Authorization: token $GITHUB_TOKEN")
-LATEST_TAG=$(curl "${CURL_OPTS[@]}" "https://api.github.com/repos/crmne/fastpotify/releases/latest" | jq -r '.tag_name')
-
-if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-    echo "Error: Could not fetch latest version from GitHub"
-    exit 1
-fi
-
+LATEST_TAG=$(curl "${CURL_OPTS[@]}" \
+    "https://api.github.com/repos/crmne/fastpotify/releases/latest" |
+    jq -er '.tag_name')
 LATEST_VERSION="${LATEST_TAG#v}"
 echo "Latest version:  $LATEST_VERSION"
 
@@ -29,37 +35,46 @@ if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
     exit 0
 fi
 
-echo "Fetching source hash for $LATEST_TAG..."
-SRC_HASH=$(nix-prefetch-github crmne fastpotify --rev "$LATEST_TAG" | jq -r '.hash')
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+NEXT_PACKAGE="$TMP_DIR/package.nix"
+NEXT_LOCK="$TMP_DIR/Cargo.lock"
+cp "$PACKAGE_NIX" "$NEXT_PACKAGE"
 
-if [ -z "$SRC_HASH" ] || [ "$SRC_HASH" = "null" ]; then
-    echo "Error: Could not compute source hash"
-    exit 1
-fi
+echo "Fetching source hash for $LATEST_TAG..."
+RAW_HASH=$(nix-prefetch-url --unpack --type sha256 \
+    "https://github.com/crmne/fastpotify/archive/refs/tags/${LATEST_TAG}.tar.gz")
+SRC_HASH=$(nix hash convert --hash-algo sha256 --to sri "$RAW_HASH")
+case "$SRC_HASH" in
+    sha256-AAAAAAAA*)
+        echo "Error: refusing to write the Nix fake hash" >&2
+        exit 1
+        ;;
+    sha256-?*) ;;
+    *)
+        echo "Error: unusable source hash: '$SRC_HASH'" >&2
+        exit 1
+        ;;
+esac
 echo "New source hash: $SRC_HASH"
 
-# Pin the exact Cargo.lock from the release tag as a real repo-tracked file.
-# `cargoLock.lockFile = ${src}/Cargo.lock` would need to read a fetcher's
-# output during evaluation (import-from-derivation) and breaks
-# `nix flake check --option allow-import-from-derivation false`; a
-# repo-local ./Cargo.lock avoids that without any hash-mismatch trick.
 echo "Fetching Cargo.lock for $LATEST_TAG..."
-curl "${CURL_OPTS[@]}" -o "$CARGO_LOCK" \
+curl "${CURL_OPTS[@]}" -o "$NEXT_LOCK" \
     "https://raw.githubusercontent.com/crmne/fastpotify/$LATEST_TAG/Cargo.lock"
+grep -q '^\[\[package\]\]' "$NEXT_LOCK"
 
-if ! grep -q '^\[\[package\]\]' "$CARGO_LOCK"; then
-    echo "Error: Fetched Cargo.lock looks malformed"
-    exit 1
-fi
+echo "Refreshing Cargo git dependency hashes..."
+python3 "$SCRIPT_DIR/scripts/refresh-cargo-git-sources.py" \
+    "$NEXT_LOCK" "$NEXT_PACKAGE" \
+    --version "$LATEST_VERSION" \
+    --source-hash "$SRC_HASH"
 
-# Only the first occurrence of each attribute: package.nix declares each of
-# these exactly once, but an unbounded sed would silently touch a second
-# match if the file ever grows one (e.g. a changelog URL repeating the hash).
-sed -i "0,/version = \".*\"/{s/version = \".*\"/version = \"$LATEST_VERSION\"/}" "$PACKAGE_NIX"
-sed -i "0,/hash = \"sha256-.*\"/{s/hash = \"sha256-.*\"/hash = \"$SRC_HASH\"/}" "$PACKAGE_NIX"
-
+mv "$NEXT_PACKAGE" "$PACKAGE_NIX"
+mv "$NEXT_LOCK" "$CARGO_LOCK"
 echo "Updated package.nix and Cargo.lock to version $LATEST_VERSION"
-echo ""
-echo "Verifying build..."
-nix build "$SCRIPT_DIR#fastpotify" -L
-echo "Build ok."
+
+if "$BUILD"; then
+    echo "Verifying build..."
+    nix build "$SCRIPT_DIR#fastpotify" --accept-flake-config -L
+    echo "Build ok."
+fi

@@ -20,11 +20,11 @@
 }:
 
 let
-  projectmSource = fetchgit {
-    url = "https://github.com/projectM-visualizer/projectm";
-    rev = "98101f56feea576f8e240061c457541abc797aa1";
+  projectmRsSource = fetchgit {
+    url = "https://github.com/crmne/projectm-rs";
+    rev = "d07af37a41736e1383d5b3d81b93c6352003d901";
     fetchSubmodules = true;
-    hash = "sha256-cQuyt5Kqfuwob/nqvNuM1kiS2Wz8yj5F1SXyKC+w+fA=";
+    hash = "sha256-sgI6IOCpQUvdc5acQ1wjCM5mhfz2EPZmoeuyNLGB5UI=";
   };
 in
 rustPlatform.buildRustPackage (finalAttrs: {
@@ -51,7 +51,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # projectm-sys only searches lib, while CMake installs to lib64 on x86_64.
   postPatch = ''
     rm -rf "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
-    cp -r ${projectmSource} "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
+    cp -r ${projectmRsSource}/projectm-sys/libprojectM \
+      "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
     substituteInPlace "$cargoDepsCopy/projectm-sys-1.2.3/build.rs" \
       --replace-fail \
         'println!("cargo:rustc-link-search=native={}/lib", dst.display());' \
