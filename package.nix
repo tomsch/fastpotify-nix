@@ -50,10 +50,19 @@ rustPlatform.buildRustPackage (finalAttrs: {
   # exact projectM tree pinned by projectm-rs before Cargo builds projectm-sys.
   # projectm-sys only searches lib, while CMake installs to lib64 on x86_64.
   postPatch = ''
-    rm -rf "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
+    projectmVendorDir=
+    for candidate in "$cargoDepsCopy"/projectm-sys-*; do
+      if [ -n "$projectmVendorDir" ] || [ ! -d "$candidate" ]; then
+        echo "Expected exactly one vendored projectm-sys directory" >&2
+        exit 1
+      fi
+      projectmVendorDir="$candidate"
+    done
+
+    rm -rf "$projectmVendorDir/libprojectM"
     cp -r ${projectmRsSource}/projectm-sys/libprojectM \
-      "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
-    substituteInPlace "$cargoDepsCopy/projectm-sys-1.2.3/build.rs" \
+      "$projectmVendorDir/libprojectM"
+    substituteInPlace "$projectmVendorDir/build.rs" \
       --replace-fail \
         'println!("cargo:rustc-link-search=native={}/lib", dst.display());' \
         'println!("cargo:rustc-link-search=native={}/lib64", dst.display());'

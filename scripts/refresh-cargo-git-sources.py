@@ -85,7 +85,9 @@ def prefetch_git(url: str, rev: str, *, fetch_submodules: bool = False) -> str:
         else [
             "nix",
             "run",
-            f"{Path(__file__).resolve().parents[1]}#nix-prefetch-git",
+            "--inputs-from",
+            str(Path(__file__).resolve().parents[1]),
+            "nixpkgs#nix-prefetch-git",
             "--",
         ]
     )
