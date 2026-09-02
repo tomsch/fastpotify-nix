@@ -2,7 +2,9 @@
   lib,
   rustPlatform,
   fetchFromGitHub,
+  fetchgit,
   pkg-config,
+  cmake,
   makeWrapper,
   copyDesktopItems,
   makeDesktopItem,
@@ -17,35 +19,64 @@
   libxi,
 }:
 
+let
+  projectmSource = fetchgit {
+    url = "https://github.com/projectM-visualizer/projectm";
+    rev = "98101f56feea576f8e240061c457541abc797aa1";
+    fetchSubmodules = true;
+    hash = "sha256-cQuyt5Kqfuwob/nqvNuM1kiS2Wz8yj5F1SXyKC+w+fA=";
+  };
+in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
-  version = "0.4.1";
+  version = "0.5.0";
 
   src = fetchFromGitHub {
     owner = "crmne";
     repo = "fastpotify";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-z/g5T2qR7nyBbxeSDEJ8GVRkyrkX/6F6GOLUa7lvgMM=";
+    hash = "sha256-mXpmzF3GDttcF6d/3vyTyc2kBC1bTFOhnKI6qGBJG2c=";
   };
 
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "librespot-audio-0.8.0" = "sha256-RtuFuHywWn5sdAMjjAyv8d3n/pEol6F28HGjdTtWixM=";
+      "projectm-sys-1.2.3" = "sha256-682V6R+h9ywkrP81jf8zEivi7chtQT7iK9HNdiuqDZc=";
+    };
+  };
+
+  # importCargoLock fetches git dependencies without submodules. Restore the
+  # exact projectM tree pinned by projectm-rs before Cargo builds projectm-sys.
+  # projectm-sys only searches lib, while CMake installs to lib64 on x86_64.
+  postPatch = ''
+    rm -rf "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
+    cp -r ${projectmSource} "$cargoDepsCopy/projectm-sys-1.2.3/libprojectM"
+    substituteInPlace "$cargoDepsCopy/projectm-sys-1.2.3/build.rs" \
+      --replace-fail \
+        'println!("cargo:rustc-link-search=native={}/lib", dst.display());' \
+        'println!("cargo:rustc-link-search=native={}/lib64", dst.display());'
+  '';
 
   nativeBuildInputs = [
     pkg-config
+    cmake
+    rustPlatform.bindgenHook
     makeWrapper
     copyDesktopItems
   ];
 
   # librespot's rodio audio backend links ALSA and PulseAudio (which covers
-  # PipeWire) directly.
+  # PipeWire) directly; projectM links OpenGL and uses X11 headers.
   buildInputs = [
     alsa-lib
     libpulseaudio
+    libGL
+    libx11
   ];
 
   # eframe's glow backend and winit's windowing backends dlopen these at
-  # runtime rather than linking them, so they belong on LD_LIBRARY_PATH
-  # instead of buildInputs.
+  # runtime, so they also need to be available on LD_LIBRARY_PATH.
   runtimeLibs = [
     libGL
     libxkbcommon
