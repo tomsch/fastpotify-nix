@@ -22,27 +22,27 @@
 let
   projectmRsSource = fetchgit {
     url = "https://github.com/crmne/projectm-rs";
-    rev = "d07af37a41736e1383d5b3d81b93c6352003d901";
+    rev = "454f38c50a968b13028ab6716d33647b3e99388c";
     fetchSubmodules = true;
-    hash = "sha256-sgI6IOCpQUvdc5acQ1wjCM5mhfz2EPZmoeuyNLGB5UI=";
+    hash = "sha256-btM3/MJ3jP3fvmdYO23sOiELhfpl2tPGnPVOZp4phIM=";
   };
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
-  version = "0.5.0";
+  version = "0.6.0";
 
   src = fetchFromGitHub {
     owner = "crmne";
     repo = "fastpotify";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-mXpmzF3GDttcF6d/3vyTyc2kBC1bTFOhnKI6qGBJG2c=";
+    hash = "sha256-N7SSPALIQJpAL4nTf+H+sTHwXu6jby6DRm4oUXTTq0I=";
   };
 
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
       "librespot-audio-0.8.0" = "sha256-RtuFuHywWn5sdAMjjAyv8d3n/pEol6F28HGjdTtWixM=";
-      "projectm-sys-1.2.3" = "sha256-682V6R+h9ywkrP81jf8zEivi7chtQT7iK9HNdiuqDZc=";
+      "projectm-sys-1.2.3" = "sha256-0k6xI43YVDdGvzqIArzsdCmYV82k7DLZOfgfy4Q70i8=";
     };
   };
 
