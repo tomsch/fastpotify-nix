@@ -29,19 +29,19 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
-  version = "0.6.0";
+  version = "0.7.0";
 
   src = fetchFromGitHub {
     owner = "crmne";
     repo = "fastpotify";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-N7SSPALIQJpAL4nTf+H+sTHwXu6jby6DRm4oUXTTq0I=";
+    hash = "sha256-XZovQINJXG68ex8amJ6Sx9jphs6AIPnhLtI7Wh9TFgA=";
   };
 
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
-      "librespot-audio-0.8.0" = "sha256-RtuFuHywWn5sdAMjjAyv8d3n/pEol6F28HGjdTtWixM=";
+      "librespot-audio-0.8.0" = "sha256-w9TpMxUYjwhTuez+L7n+bL92vWr1dmU4zMnyMngLUxk=";
       "projectm-sys-1.2.3" = "sha256-0k6xI43YVDdGvzqIArzsdCmYV82k7DLZOfgfy4Q70i8=";
     };
   };
