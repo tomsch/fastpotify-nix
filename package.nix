@@ -29,13 +29,13 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
-  version = "0.7.0";
+  version = "0.7.1";
 
   src = fetchFromGitHub {
     owner = "crmne";
     repo = "fastpotify";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-XZovQINJXG68ex8amJ6Sx9jphs6AIPnhLtI7Wh9TFgA=";
+    hash = "sha256-RZEM1b7oj0dAIXKf+B4z5g8RaO9lArMk04/h++roGME=";
   };
 
   cargoLock = {
