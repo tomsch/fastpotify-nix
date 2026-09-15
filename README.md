@@ -63,6 +63,11 @@ Run the updater regression checks with `python3 tests/test_updater.py`. The nest
 submodule regression uses real local Git repositories and Nix hashing; it requires
 Git and Nix, and may fetch `nix-prefetch-git` from the flake's pinned nixpkgs.
 
+The package keeps upstream tests enabled. From 0.8.0, the branding integration
+tests need `dbus-run-session`; `dbus` is provided through
+[`nativeCheckInputs`](https://nixos.org/manual/nixpkgs/stable/#ssec-check-phase)
+inside the Nix sandbox, not installed separately on the CI runner.
+
 ## License
 
 This packaging is MIT licensed. Fastpotify itself is
