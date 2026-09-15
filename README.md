@@ -39,6 +39,29 @@ nix build github:tomsch/fastpotify-nix
 - Sign-in and Spotify Connect playback work the same as upstream; see the
   [upstream README](https://github.com/crmne/fastpotify#sign-in) for the
   OAuth/PKCE flow and one-time librespot playback grant.
+- Cargo Git hashes include recursive submodules, matching
+  [nixpkgs `importCargoLock`](https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/rust/import-cargo-lock.nix)
+  and [`fetchgit`](https://github.com/NixOS/nixpkgs/blob/master/pkgs/build-support/fetchgit/default.nix).
+  projectM builds directly from that vendored tree; no separate source download
+  or downstream hash override is needed.
+- Launcher icons are installed at 48, 64, 128, 256, and 512 pixels in the
+  [hicolor theme](https://specifications.freedesktop.org/icon-theme/latest/),
+  using [ImageMagick resizing](https://imagemagick.org/command-line-options/#resize).
+
+## Updating
+
+`./update.sh` updates the release source and Cargo Git hashes, then builds the
+package. `./update.sh --no-build` leaves the build to CI.
+
+To refresh Git hashes for the currently pinned release without changing versions:
+
+```bash
+python3 scripts/refresh-cargo-git-sources.py Cargo.lock package.nix
+```
+
+Run the updater regression checks with `python3 tests/test_updater.py`. The nested
+submodule regression uses real local Git repositories and Nix hashing; it requires
+Git and Nix, and may fetch `nix-prefetch-git` from the flake's pinned nixpkgs.
 
 ## License
 
