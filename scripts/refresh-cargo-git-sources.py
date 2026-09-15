@@ -77,7 +77,7 @@ def read_git_sources(lock_file: Path) -> list[GitSource]:
     return sources
 
 
-def prefetch_git(url: str, rev: str, *, fetch_submodules: bool = False) -> str:
+def prefetch_git(url: str, rev: str) -> str:
     configured = os.environ.get("NIX_PREFETCH_GIT")
     command = (
         shlex.split(configured)
@@ -91,9 +91,8 @@ def prefetch_git(url: str, rev: str, *, fetch_submodules: bool = False) -> str:
             "--",
         ]
     )
-    command.extend(["--quiet", "--url", url, "--rev", rev])
-    if fetch_submodules:
-        command.append("--fetch-submodules")
+    # importCargoLock uses fetchgit, whose fetchSubmodules default is true.
+    command.extend(["--quiet", "--url", url, "--rev", rev, "--fetch-submodules"])
 
     completed = subprocess.run(
         command,
@@ -161,39 +160,6 @@ def replace_output_hashes(package_nix: str, hashes: list[tuple[str, str]]) -> st
     return package_nix[: match.start("body")] + body + package_nix[match.end("body") :]
 
 
-def replace_projectm_source(package_nix: str, source: GitSource, source_hash: str) -> str:
-    block_pattern = re.compile(
-        r"(?P<head>projectmRsSource = fetchgit \{\n)(?P<body>.*?)(?P<tail>^\s*\};)",
-        re.MULTILINE | re.DOTALL,
-    )
-    block_match = block_pattern.search(package_nix)
-    if block_match is None:
-        raise ValueError("package.nix has no projectmRsSource fetchgit block")
-
-    body = block_match.group("body")
-    replacements = {
-        "url": source.url,
-        "rev": source.rev,
-        "hash": source_hash,
-    }
-    for attribute, value in replacements.items():
-        body, count = re.subn(
-            rf'(^\s*{attribute} = )".*";',
-            rf'\g<1>{json.dumps(value)};',
-            body,
-            count=1,
-            flags=re.MULTILINE,
-        )
-        if count != 1:
-            raise ValueError(f"projectmRsSource has no unique {attribute} attribute")
-
-    return (
-        package_nix[: block_match.start("body")]
-        + body
-        + package_nix[block_match.end("body") :]
-    )
-
-
 def refresh(
     lock_file: Path,
     package_file: Path,
@@ -213,25 +179,10 @@ def refresh(
         for source in sources
     ]
 
-    projectm_sources = [
-        source
-        for source in sources
-        if any(name == "projectm-sys" for name, _version in source.packages)
-    ]
-    if len(projectm_sources) != 1:
-        raise ValueError("Cargo.lock must contain exactly one projectm-sys git source")
-    projectm_source = projectm_sources[0]
-    projectm_hash = prefetch_git(
-        projectm_source.url,
-        projectm_source.rev,
-        fetch_submodules=True,
-    )
-
     package_nix = package_file.read_text()
     if version is not None and source_hash is not None:
         package_nix = replace_release(package_nix, version, source_hash)
     package_nix = replace_output_hashes(package_nix, output_hashes)
-    package_nix = replace_projectm_source(package_nix, projectm_source, projectm_hash)
     package_file.write_text(package_nix)
 
 

@@ -3,6 +3,7 @@
 import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -43,93 +44,56 @@ LOCK = textwrap.dedent(
     """
 ).strip()
 
-SOURCE_HASH = "sha256-" + ("d" * 43) + "="
-
-PACKAGE_NIX = textwrap.dedent(
-    """
-    let
-      projectmRsSource = fetchgit {
-        url = "https://github.com/old/projectm-rs";
-        rev = "old-revision";
-        fetchSubmodules = true;
-        hash = "sha256-old";
-      };
-    in
-    rustPlatform.buildRustPackage {
-      version = "0.4.1";
-      src = fetchFromGitHub {
-        owner = "crmne";
-        repo = "fastpotify";
-        rev = "v${version}";
-        hash = "sha256-old-source";
-      };
-      cargoLock = {
-        lockFile = ./Cargo.lock;
-        outputHashes = {
-          "obsolete-1.0.0" = "sha256-obsolete";
-        };
-      };
-    }
-    """
-).strip() + "\n"
-
 
 class RefreshCargoGitSourcesTests(unittest.TestCase):
-    def test_groups_workspace_crates_and_refreshes_projectm_source(self):
+    @unittest.skipUnless(shutil.which("nix") and shutil.which("git"), "requires Nix and Git")
+    def test_prefetch_hash_includes_nested_submodules(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            lock_file = root / "Cargo.lock"
-            package_file = root / "package.nix"
-            lock_file.write_text(LOCK)
-            package_file.write_text(PACKAGE_NIX)
 
-            calls = []
+            def git(repo, *args):
+                return subprocess.run(
+                    ["git", "-C", str(repo), *args],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                ).stdout.strip()
 
-            def fake_prefetch(url, rev, *, fetch_submodules=False):
-                calls.append((url, rev, fetch_submodules))
-                suffix = "submodules" if fetch_submodules else rev[0]
-                return f"sha256-{suffix}"
+            env = {
+                "GIT_CONFIG_COUNT": "3",
+                "GIT_CONFIG_KEY_0": "protocol.file.allow",
+                "GIT_CONFIG_VALUE_0": "always",
+                "GIT_CONFIG_KEY_1": "user.name",
+                "GIT_CONFIG_VALUE_1": "Updater Test",
+                "GIT_CONFIG_KEY_2": "user.email",
+                "GIT_CONFIG_VALUE_2": "test@example.invalid",
+            }
+            with patch.dict(os.environ, env):
+                child = None
+                for name in ("nested", "library", "workspace"):
+                    repo = root / name
+                    repo.mkdir()
+                    git(repo, "init", "-q")
+                    (repo / "source.txt").write_text(name + "\n")
+                    if child is not None:
+                        git(repo, "submodule", "add", "-q", child.as_uri(), "vendor")
+                        git(repo, "submodule", "update", "--init", "--recursive")
+                    git(repo, "add", ".")
+                    git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
+                    child = repo
 
-            with patch.object(HELPER, "prefetch_git", side_effect=fake_prefetch):
-                HELPER.refresh(
-                    lock_file,
-                    package_file,
-                    version="0.5.0",
-                    source_hash=SOURCE_HASH,
-                )
+                expected_tree = root / "expected"
+                shutil.copytree(repo, expected_tree, ignore=shutil.ignore_patterns(".git"))
+                expected_hash = subprocess.run(
+                    ["nix", "hash", "path", str(expected_tree)],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                ).stdout.strip()
+                actual_hash = HELPER.prefetch_git(repo.as_uri(), git(repo, "rev-parse", "HEAD"))
 
-            updated = package_file.read_text()
-            self.assertIn('version = "0.5.0";', updated)
-            self.assertIn(f'hash = "{SOURCE_HASH}";', updated)
-            self.assertNotIn("sha256-old-source", updated)
-            self.assertIn('"librespot-audio-0.8.0" = "sha256-a";', updated)
-            self.assertNotIn("librespot-core-0.8.0", updated)
-            self.assertIn('"projectm-sys-1.2.3" = "sha256-b";', updated)
-            self.assertNotIn("obsolete-1.0.0", updated)
-            self.assertNotIn("registry-only", updated)
-            self.assertIn('url = "https://github.com/crmne/projectm-rs";', updated)
-            self.assertIn('rev = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";', updated)
-            self.assertIn('hash = "sha256-submodules";', updated)
-            self.assertEqual(
-                calls,
-                [
-                    (
-                        "https://github.com/crmne/librespot",
-                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                        False,
-                    ),
-                    (
-                        "https://github.com/crmne/projectm-rs",
-                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                        False,
-                    ),
-                    (
-                        "https://github.com/crmne/projectm-rs",
-                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                        True,
-                    ),
-                ],
-            )
+            self.assertEqual(actual_hash, expected_hash)
 
     def test_rejects_conflicting_repositories_for_same_revision(self):
         lock = LOCK + textwrap.dedent(

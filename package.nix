@@ -2,12 +2,12 @@
   lib,
   rustPlatform,
   fetchFromGitHub,
-  fetchgit,
   pkg-config,
   cmake,
   makeWrapper,
   copyDesktopItems,
   makeDesktopItem,
+  imagemagick,
   alsa-lib,
   libpulseaudio,
   libxkbcommon,
@@ -19,14 +19,6 @@
   libxi,
 }:
 
-let
-  projectmRsSource = fetchgit {
-    url = "https://github.com/crmne/projectm-rs";
-    rev = "454f38c50a968b13028ab6716d33647b3e99388c";
-    fetchSubmodules = true;
-    hash = "sha256-btM3/MJ3jP3fvmdYO23sOiELhfpl2tPGnPVOZp4phIM=";
-  };
-in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
   version = "0.7.1";
@@ -42,12 +34,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
     lockFile = ./Cargo.lock;
     outputHashes = {
       "librespot-audio-0.8.0" = "sha256-w9TpMxUYjwhTuez+L7n+bL92vWr1dmU4zMnyMngLUxk=";
-      "projectm-sys-1.2.3" = "sha256-0k6xI43YVDdGvzqIArzsdCmYV82k7DLZOfgfy4Q70i8=";
+      "projectm-sys-1.2.3" = "sha256-btM3/MJ3jP3fvmdYO23sOiELhfpl2tPGnPVOZp4phIM=";
     };
   };
 
-  # importCargoLock fetches git dependencies without submodules. Restore the
-  # exact projectM tree pinned by projectm-rs before Cargo builds projectm-sys.
+  # importCargoLock includes the projectM submodules in the vendored source.
   # projectm-sys only searches lib, while CMake installs to lib64 on x86_64.
   postPatch = ''
     projectmVendorDir=
@@ -59,9 +50,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
       projectmVendorDir="$candidate"
     done
 
-    rm -rf "$projectmVendorDir/libprojectM"
-    cp -r ${projectmRsSource}/projectm-sys/libprojectM \
-      "$projectmVendorDir/libprojectM"
     substituteInPlace "$projectmVendorDir/build.rs" \
       --replace-fail \
         'println!("cargo:rustc-link-search=native={}/lib", dst.display());' \
@@ -74,6 +62,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     rustPlatform.bindgenHook
     makeWrapper
     copyDesktopItems
+    imagemagick
   ];
 
   # librespot's rodio audio backend links ALSA and PulseAudio (which covers
@@ -103,6 +92,12 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
     install -Dm644 packaging/macos/icon-1024.png \
       $out/share/icons/hicolor/1024x1024/apps/fastpotify.png
+    for size in 512 256 128 64 48; do
+      iconDir="$out/share/icons/hicolor/''${size}x''${size}/apps"
+      install -d "$iconDir"
+      magick packaging/macos/icon-1024.png -resize "''${size}x''${size}" \
+        "$iconDir/fastpotify.png"
+    done
   '';
 
   desktopItems = [
