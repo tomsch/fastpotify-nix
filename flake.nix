@@ -1,5 +1,5 @@
 {
-  description = "Fastpotify (crmne/fastpotify) packaged for Nix/NixOS";
+  description = "Spotifast (crmne/spotifast) packaged for Nix/NixOS";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -12,11 +12,11 @@
     in {
       packages.${system} = {
         default = pkgs.callPackage ./package.nix {};
-        fastpotify = self.packages.${system}.default;
+        spotifast = self.packages.${system}.default;
       };
 
       overlays.default = final: prev: {
-        fastpotify = final.callPackage ./package.nix {};
+        spotifast = final.callPackage ./package.nix {};
       };
     };
 }

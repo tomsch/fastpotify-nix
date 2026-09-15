@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           LATEST_TAG=$(curl -fsSL \
             -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/crmne/fastpotify/releases/latest" |
+            "https://api.github.com/repos/crmne/spotifast/releases/latest" |
             jq -er '.tag_name')
           LATEST_VERSION="${LATEST_TAG#v}"
           CURRENT=$(grep 'version = ' package.nix | head -1 | sed 's/.*"\(.*\)".*/\1/')
@@ -52,7 +52,7 @@ jobs:
       - name: Test build
         if: steps.check.outputs.needs_update == 'true'
         run: |
-          nix build .#fastpotify --accept-flake-config
+          nix build .#spotifast --accept-flake-config
 
       - name: Commit and push
         if: steps.check.outputs.needs_update == 'true'
@@ -60,7 +60,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.nix Cargo.lock
-          git commit -m "Update fastpotify to ${{ steps.check.outputs.latest }}"
+          git commit -m "Update spotifast to ${{ steps.check.outputs.latest }}"
           git push
 
       - name: Ensure Release exists

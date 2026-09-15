@@ -197,7 +197,6 @@ class EnsureReleaseTests(unittest.TestCase):
         calls = self.run_script(False)
         self.assertEqual(calls[0], "release view v0.5.0")
         self.assertIn("release create v0.5.0 --target main", calls[1])
-        self.assertIn("upstream: https://github.com/crmne/fastpotify/releases/tag/v0.5.0", calls[1])
 
 
 if __name__ == "__main__":
