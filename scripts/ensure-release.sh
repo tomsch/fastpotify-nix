@@ -18,5 +18,5 @@ fi
 
 gh release create "$RELEASE_TAG" \
     --target main \
-    --title "fastpotify $VERSION" \
-    --notes "Updated fastpotify to $VERSION (upstream: https://github.com/crmne/fastpotify/releases/tag/$UPSTREAM_TAG)"
+    --title "Spotifast $VERSION" \
+    --notes "Updated Spotifast to $VERSION (upstream: https://github.com/crmne/spotifast/releases/tag/$UPSTREAM_TAG)"

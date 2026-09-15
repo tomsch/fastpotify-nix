@@ -21,12 +21,12 @@
 }:
 
 rustPlatform.buildRustPackage (finalAttrs: {
-  pname = "fastpotify";
+  pname = "spotifast";
   version = "0.8.0";
 
   src = fetchFromGitHub {
     owner = "crmne";
-    repo = "fastpotify";
+    repo = "spotifast";
     rev = "v${finalAttrs.version}";
     hash = "sha256-cX9DXG4u7mBSl6sO768A1vJ9kHZZc12+STzRU0KuWh0=";
   };
@@ -91,25 +91,27 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ];
 
   postInstall = ''
-    wrapProgram $out/bin/fastpotify \
+    # Upstream tests need both commands; only install the primary command.
+    rm "$out/bin/fastpotify"
+    wrapProgram $out/bin/spotifast \
       --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath finalAttrs.runtimeLibs}
 
     install -Dm644 packaging/macos/icon-1024.png \
-      $out/share/icons/hicolor/1024x1024/apps/fastpotify.png
+      $out/share/icons/hicolor/1024x1024/apps/spotifast.png
     for size in 512 256 128 64 48; do
       iconDir="$out/share/icons/hicolor/''${size}x''${size}/apps"
       install -d "$iconDir"
       magick packaging/macos/icon-1024.png -resize "''${size}x''${size}" \
-        "$iconDir/fastpotify.png"
+        "$iconDir/spotifast.png"
     done
   '';
 
   desktopItems = [
     (makeDesktopItem {
-      name = "fastpotify";
-      exec = "fastpotify";
-      icon = "fastpotify";
-      desktopName = "Fastpotify";
+      name = "spotifast";
+      exec = "spotifast";
+      icon = "spotifast";
+      desktopName = "Spotifast";
       genericName = "Music Player";
       comment = "A fast, native Spotify client";
       categories = [
@@ -126,16 +128,17 @@ rustPlatform.buildRustPackage (finalAttrs: {
       ];
       mimeTypes = [ "x-scheme-handler/spotify" ];
       startupNotify = true;
+      # Upstream retains this app-id for existing desktop/window rules.
       startupWMClass = "fastpotify";
     })
   ];
 
   meta = {
     description = "Fast, lightweight, native Spotify client built with Rust and egui, playing through librespot";
-    homepage = "https://fastpotify.rocks/";
-    changelog = "https://github.com/crmne/fastpotify/releases/tag/v${finalAttrs.version}";
+    homepage = "https://spotifast.rocks/";
+    changelog = "https://github.com/crmne/spotifast/releases/tag/v${finalAttrs.version}";
     license = lib.licenses.mit;
     platforms = [ "x86_64-linux" ];
-    mainProgram = "fastpotify";
+    mainProgram = "spotifast";
   };
 })
