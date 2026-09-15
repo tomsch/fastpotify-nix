@@ -8,6 +8,7 @@
   copyDesktopItems,
   makeDesktopItem,
   imagemagick,
+  dbus,
   alsa-lib,
   libpulseaudio,
   libxkbcommon,
@@ -21,19 +22,19 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "fastpotify";
-  version = "0.7.1";
+  version = "0.8.0";
 
   src = fetchFromGitHub {
     owner = "crmne";
     repo = "fastpotify";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-RZEM1b7oj0dAIXKf+B4z5g8RaO9lArMk04/h++roGME=";
+    hash = "sha256-cX9DXG4u7mBSl6sO768A1vJ9kHZZc12+STzRU0KuWh0=";
   };
 
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
-      "librespot-audio-0.8.0" = "sha256-w9TpMxUYjwhTuez+L7n+bL92vWr1dmU4zMnyMngLUxk=";
+      "librespot-audio-0.8.0" = "sha256-Wmol2ikFPjSetG92nqzcWtl93puO6c+M4IGm5of1vgg=";
       "projectm-sys-1.2.3" = "sha256-btM3/MJ3jP3fvmdYO23sOiELhfpl2tPGnPVOZp4phIM=";
     };
   };
@@ -64,6 +65,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
     copyDesktopItems
     imagemagick
   ];
+
+  # Branding integration tests start a private bus with dbus-run-session.
+  nativeCheckInputs = [ dbus ];
 
   # librespot's rodio audio backend links ALSA and PulseAudio (which covers
   # PipeWire) directly; projectM links OpenGL and uses X11 headers.
